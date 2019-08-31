@@ -32,8 +32,8 @@ impl Value {
             Combinator::S => Function::S,
             Combinator::V => Function::V,
             Combinator::D => Function::D,
+            Combinator::C => Function::C,
             Combinator::Dot(ch) => Function::Dot(ch),
-            _ => panic!("{:?} not supported.", c),
         })
     }
 }
@@ -49,6 +49,8 @@ pub enum Function {
     V,
     D,
     D1(usize),
+    C,
+    C1(Box<VmState>),
     Dot(char),
 }
 
@@ -83,11 +85,31 @@ const D1_CODE: [OpCode; D1_LEN] = [
 ];
 
 
+/// Structure representing the state of the VM.
+///
+/// The return stack is a list of `(to, from)` tuples. If at any point during execution, the
+/// program counter equals the `from` element of the topmost stack item, the element is dropped
+/// and the program counter is set to `to`.
+///
+/// Always use `push_rstack` to add elements to the return stack, as it performs TCO. The TCO
+/// invariant is that `stack[-1].to != stack[-2].from`.
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct VmState {
+pub struct VmState {
     stack: Vec<Rc<Value>>,
     rstack: Vec<(usize, usize)>,
     pc: usize,
+}
+
+impl VmState {
+    fn push_rstack(&mut self, to: usize, from: usize) {
+        let (then_to, then_from) = self.rstack[self.rstack.len() - 1];
+        if then_from == to {
+            let last = self.rstack.len() - 1;
+            self.rstack[last] = (then_to, from);
+        } else {
+            self.rstack.push((to, from));
+        }
+    }
 }
 
 impl Default for VmState {
@@ -153,56 +175,62 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
-        println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
-        loop {
-            let (to, return_position) = vm_state.rstack[vm_state.rstack.len() - 1];
-            if vm_state.pc == return_position {
-                println!("Jumping down {} → {}", vm_state.pc, to);
-                vm_state.pc = to;
-                vm_state.rstack.pop();
-            } else {
-                break
-            }
+        //println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
+
+        let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
+        if vm_state.pc == from {
+            //println!("Jumping down {} → {}", vm_state.pc, to);
+            vm_state.pc = to;
+            vm_state.rstack.pop();
         }
     }
 }
 
 fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
-    let stack = &mut vm_state.stack;
-    let rstack = &mut vm_state.rstack;
-    let (arg, fun) = (stack.pop().unwrap(), stack.pop().unwrap());
+    let (arg, fun) = (vm_state.stack.pop().unwrap(), vm_state.stack.pop().unwrap());
     match fun.borrow() {
         Value::Function(f) => match f {
-            Function::I => stack.push(arg),
-            Function::K => stack.push(Rc::new(Value::Function(Function::K1(arg)))),
-            Function::K1(val) => stack.push(val.clone()),
-            Function::S => stack.push(Rc::new(Value::Function(Function::S1(arg)))),
+            Function::I => vm_state.stack.push(arg),
+            Function::K => vm_state.stack.push(Rc::new(Value::Function(Function::K1(arg)))),
+            Function::K1(val) => vm_state.stack.push(val.clone()),
+            Function::S => vm_state.stack.push(Rc::new(Value::Function(Function::S1(arg)))),
             Function::S1(val) => {
-                stack.push(Rc::new(Value::Function(Function::S2(val.clone(), arg))))
+                vm_state.stack.push(Rc::new(Value::Function(Function::S2(val.clone(), arg))))
             }
             Function::S2(val1, val2) => {
-                stack.push(val1.clone());
-                stack.push(arg.clone());
-                stack.push(val2.clone());
-                stack.push(arg.clone());
-                rstack.push((vm_state.pc + 1, K2_END));
+                vm_state.stack.push(val1.clone());
+                vm_state.stack.push(arg.clone());
+                vm_state.stack.push(val2.clone());
+                vm_state.stack.push(arg.clone());
+                vm_state.push_rstack(vm_state.pc + 1, K2_END);
                 vm_state.pc = K2_START;
             }
-            Function::V => stack.push(fun.clone()),
+            Function::V => vm_state.stack.push(fun.clone()),
             Function::D => panic!("d operator invoked"),
             Function::D1(at) => {
                 if let OpCode::CheckSuspend(offset) = code[*at - 1] {
-                    stack.push(arg);
-                    rstack.push((vm_state.pc + 1, D1_END));
-                    rstack.push((D1_START, *at - 2 + offset));
+                    vm_state.stack.push(arg);
+                    vm_state.push_rstack(vm_state.pc + 1, D1_END);
+                    vm_state.push_rstack(D1_START, *at - 2 + offset);
                     vm_state.pc = *at;
                 } else {
                     panic!("promise does not point to a CheckSuspend opcode");
                 }
             }
+            Function::C => {
+                let saved_state = vm_state.clone();
+                vm_state.stack.push(arg);
+                vm_state.stack.push(Rc::new(Value::Function(Function::C1(Box::new(saved_state)))));
+                invoke(code, vm_state)?;
+            }
+            Function::C1(cont) => {
+                vm_state.stack = cont.stack.clone();
+                vm_state.rstack = cont.rstack.clone();
+                vm_state.pc = cont.pc;
+            }
             Function::Dot(ch) => {
                 print!("{}", ch);
-                stack.push(arg);
+                vm_state.stack.push(arg);
             }
         },
     }
@@ -235,16 +263,12 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
-    println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
+    //println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
     Ok((code, entry_point))
 }
 
 pub fn parse_compile_run(code: &str) -> Result<Value, String> {
     let st = parse_toplevel(&mut CharPosIterator::new(code.chars()).peekable())?;
-    //let mut paren = String::new();
-    //print_parenthesized(&st, 0, 0, &mut paren);
-    //println!("P> {}", &paren);
     let (code, entry_point) = compile_toplevel(&st)?;
-    //println!("C> {:?}, {}", &code, &entry_point);
     run_vm(&code, entry_point).map(|v| (*v).clone())
 }
