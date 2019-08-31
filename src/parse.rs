@@ -22,6 +22,7 @@ pub enum Combinator {
     V,
     D,
     C,
+    E,
     Dot(char),
 }
 
@@ -44,7 +45,7 @@ pub struct CharPos {
 }
 
 fn read_to_newline<I: Iterator<Item = CharPos>>(iterator: &mut Peekable<I>) {
-    while let Some(cp) = iterator.next() {
+    for cp in iterator {
         if cp.item == '\n' {
             return;
         }
@@ -75,6 +76,7 @@ fn parse<I: Iterator<Item = CharPos>>(iterator: &mut Peekable<I>) -> Result<Synt
         'v' => Ok(SyntaxTree::Combinator(Combinator::V)),
         'd' => Ok(SyntaxTree::Combinator(Combinator::D)),
         'c' => Ok(SyntaxTree::Combinator(Combinator::C)),
+        'e' => Ok(SyntaxTree::Combinator(Combinator::E)),
         '.' => iterator
             .next()
             .map(|c| SyntaxTree::Combinator(Combinator::Dot(c.item)))

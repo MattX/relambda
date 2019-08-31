@@ -33,6 +33,7 @@ pub enum Function {
     D1(usize),
     C,
     C1(Box<VmState>),
+    E,
     Dot(char),
 }
 
@@ -45,6 +46,7 @@ impl Function {
             Combinator::V => Function::V,
             Combinator::D => Function::D,
             Combinator::C => Function::C,
+            Combinator::E => Function::E,
             Combinator::Dot(ch) => Function::Dot(ch),
         }
     }
@@ -155,7 +157,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
                     vm_state.pc += 1;
                 }
             }
-            OpCode::Invoke => invoke(code, &mut vm_state)?,
+            OpCode::Invoke => {
+                if let Some(ret) = invoke(code, &mut vm_state)? {
+                    return Ok(ret);
+                }
+            },
             OpCode::Finish => {
                 debug_assert_eq!(vm_state.stack.len(), 1);
                 // The rstack should contain our sentinel return point
@@ -178,7 +184,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
     }
 }
 
-fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
+fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>>, String> {
     let (arg, fun) = (vm_state.stack.pop().unwrap(), vm_state.stack.pop().unwrap());
     match fun.borrow() {
         Function::I => vm_state.stack.push(arg),
@@ -207,8 +213,8 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
             }
         }
         Function::C => {
-            let saved_state = vm_state.clone();
             vm_state.stack.push(arg);
+            let saved_state = vm_state.clone();
             vm_state
                 .stack
                 .push(Rc::new(Function::C1(Box::new(saved_state))));
@@ -222,6 +228,7 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
             vm_state.rstack = cont.rstack.clone();
             vm_state.pc = cont.pc;
         }
+        Function::E => return Ok(Some(arg)),
         Function::Dot(ch) => {
             print!("{}", ch);
             vm_state.stack.push(arg);
@@ -231,7 +238,7 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
         Function::S2(_, _) | Function::D1(_) | Function::C => (),
         _ => vm_state.pc += 1,
     }
-    Ok(())
+    Ok(None)
 }
 
 fn compile(st: &SyntaxTree, code: &mut Vec<OpCode>) -> Result<(), String> {

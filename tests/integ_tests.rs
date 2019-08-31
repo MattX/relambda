@@ -39,3 +39,8 @@ fn test_force_promise() {
         Function::S1(Rc::new(Function::I))
     );
 }
+
+#[test]
+fn test_call_cc() {
+    assert_eq!(parse_compile_run(&"``cii").unwrap(), Function::I);
+}
