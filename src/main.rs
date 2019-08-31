@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::io::{stdin, stdout, Write};
 use std::rc::Rc;
 
-use crate::parse::{Combinator, parse_toplevel, CharPosIterator, SyntaxTree, Application, print_parenthesized};
+use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, SyntaxTree};
 
 mod parse;
 
@@ -17,7 +17,9 @@ impl Value {
             Combinator::I => Function::I,
             Combinator::K => Function::K,
             Combinator::S => Function::S,
+            Combinator::V => Function::V,
             Combinator::Dot(ch) => Function::Dot(ch),
+            _ => panic!("{:?} not supported.", c),
         })
     }
 }
@@ -30,6 +32,7 @@ enum Function {
     S,
     S1(Rc<Value>),
     S2(Rc<Value>, Rc<Value>),
+    V,
     Dot(char),
 }
 
@@ -43,7 +46,14 @@ enum OpCode {
     Finish,
 }
 
-const K2_CODE: [OpCode; 6] = [OpCode::Invoke, OpCode::Rot, OpCode::Invoke, OpCode::Swap, OpCode::Invoke, OpCode::Return];
+const K2_CODE: [OpCode; 6] = [
+    OpCode::Invoke,
+    OpCode::Rot,
+    OpCode::Invoke,
+    OpCode::Swap,
+    OpCode::Invoke,
+    OpCode::Return,
+];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct VmState {
@@ -70,7 +80,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
         match opcode {
             OpCode::PushImmediate(c) => vm_state.stack.push(Rc::new(Value::from_combinator(c))),
             OpCode::Rot => {
-                let (fst, snd, thr) = (vm_state.stack.pop().unwrap(), vm_state.stack.pop().unwrap(), vm_state.stack.pop().unwrap());
+                let (fst, snd, thr) = (
+                    vm_state.stack.pop().unwrap(),
+                    vm_state.stack.pop().unwrap(),
+                    vm_state.stack.pop().unwrap(),
+                );
                 vm_state.stack.push(fst);
                 vm_state.stack.push(thr);
                 vm_state.stack.push(snd);
@@ -115,6 +129,7 @@ fn invoke(vm_state: &mut VmState) -> Result<(), String> {
                 rstack.push(vm_state.pc + 1);
                 vm_state.pc = 0;
             }
+            Function::V => stack.push(fun.clone()),
             Function::Dot(ch) => {
                 print!("{}", ch);
                 stack.push(arg);
@@ -135,7 +150,7 @@ fn compile(st: &SyntaxTree, code: &mut Vec<OpCode>) -> Result<(), String> {
             compile(func, code)?;
             compile(arg, code)?;
             code.push(OpCode::Invoke);
-        },
+        }
     }
     Ok(())
 }
@@ -165,8 +180,8 @@ fn main() {
         stdout().flush().unwrap();
         input.clear();
         stdin().read_line(&mut input).unwrap();
-        if &input == "exit" {
-            break
+        if &input.trim().to_lowercase() == "exit" {
+            break;
         }
         match parse_compile_run(&input) {
             Ok(v) => println!("=> {:?}", v),

@@ -5,6 +5,9 @@ pub enum Combinator {
     I,
     K,
     S,
+    V,
+    D,
+    C,
     Dot(char),
 }
 
@@ -46,17 +49,18 @@ fn consume_whitespace<I: Iterator<Item = CharPos>>(iterator: &mut Peekable<I>) {
     }
 }
 
-fn parse<I: Iterator<Item = CharPos>>(
-    iterator: &mut Peekable<I>,
-) -> Result<SyntaxTree, String> {
+fn parse<I: Iterator<Item = CharPos>>(iterator: &mut Peekable<I>) -> Result<SyntaxTree, String> {
     consume_whitespace(iterator);
     let token = iterator
         .next()
         .ok_or_else(|| "unexpected EOF".to_string())?;
-    match token.item {
+    match token.item.to_ascii_lowercase() {
         'k' => Ok(SyntaxTree::Combinator(Combinator::K)),
         's' => Ok(SyntaxTree::Combinator(Combinator::S)),
         'i' => Ok(SyntaxTree::Combinator(Combinator::I)),
+        'v' => Ok(SyntaxTree::Combinator(Combinator::V)),
+        'd' => Ok(SyntaxTree::Combinator(Combinator::D)),
+        'c' => Ok(SyntaxTree::Combinator(Combinator::C)),
         '.' => iterator
             .next()
             .map(|c| SyntaxTree::Combinator(Combinator::Dot(c.item)))
@@ -124,26 +128,5 @@ impl<I: Iterator<Item = char>> Iterator for CharPosIterator<I> {
         };
         self.col += 1;
         Some(cp)
-    }
-}
-
-fn write_combinator(c: Combinator) -> String {
-    match c {
-        Combinator::I => "I".into(),
-        Combinator::K => "K".into(),
-        Combinator::S => "S".into(),
-        Combinator::Dot(ch) => format!(".{}", ch),
-    }
-}
-
-pub fn print_parenthesized(st: &SyntaxTree, depth: usize, direct_depth: usize, into: &mut String) {
-    match st {
-        SyntaxTree::Combinator(c) => into.extend(write_combinator(*c).chars()),
-        SyntaxTree::Application(Application { func, arg }) => {
-            into.push('(');
-            print_parenthesized(func, depth+1, direct_depth+1, into);
-            print_parenthesized(arg, depth+1, 0, into);
-            into.push(')');
-        }
     }
 }
