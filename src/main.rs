@@ -18,6 +18,7 @@ impl Value {
             Combinator::K => Function::K,
             Combinator::S => Function::S,
             Combinator::V => Function::V,
+            Combinator::D => Function::D,
             Combinator::Dot(ch) => Function::Dot(ch),
             _ => panic!("{:?} not supported.", c),
         })
@@ -33,32 +34,34 @@ enum Function {
     S1(Rc<Value>),
     S2(Rc<Value>, Rc<Value>),
     V,
+    D,
+    D1(usize),
     Dot(char),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum OpCode {
+    Placeholder,
     PushImmediate(Combinator),
     Swap,
     Rot,
+    CheckSuspend(usize),
     Invoke,
-    Return,
     Finish,
 }
 
-const K2_CODE: [OpCode; 6] = [
+const K2_CODE: [OpCode; 5] = [
     OpCode::Invoke,
     OpCode::Rot,
     OpCode::Invoke,
     OpCode::Swap,
     OpCode::Invoke,
-    OpCode::Return,
 ];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct VmState {
     stack: Vec<Rc<Value>>,
-    rstack: Vec<usize>,
+    rstack: Vec<(usize, usize)>,
     pc: usize,
 }
 
@@ -78,6 +81,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
     loop {
         let opcode = code[vm_state.pc];
         match opcode {
+            OpCode::Placeholder => panic!("placeholder not replaced during compilation."),
             OpCode::PushImmediate(c) => vm_state.stack.push(Rc::new(Value::from_combinator(c))),
             OpCode::Rot => {
                 let (fst, snd, thr) = (
@@ -94,21 +98,33 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
                 vm_state.stack.push(fst);
                 vm_state.stack.push(snd);
             }
-            OpCode::Invoke => invoke(&mut vm_state)?,
-            OpCode::Return => vm_state.pc = vm_state.rstack.pop().unwrap(),
+            OpCode::CheckSuspend(offset) => {
+                if let Value::Function(Function::D) = vm_state.stack[vm_state.stack.len() - 1].borrow() {
+                    vm_state.stack.pop().unwrap();
+                    vm_state.stack.push(Rc::new(Value::Function(Function::D1(vm_state.pc + 1))));
+                    vm_state.pc += offset;
+                }
+            }
+            OpCode::Invoke => invoke(code, &mut vm_state)?,
             OpCode::Finish => {
                 debug_assert_eq!(vm_state.stack.len(), 1);
                 return Ok(vm_state.stack.pop().unwrap());
             }
         }
-        if opcode != OpCode::Return && opcode != OpCode::Invoke {
-            vm_state.pc += 1;
+        match opcode {
+            OpCode::Invoke | OpCode::CheckSuspend(_) => (),
+            _ => vm_state.pc += 1,
         }
-        //println!("{:?} → {:?} → {:?}", &vm_state, opcode, code[vm_state.pc]);
+        if let Some((to, auto_return)) = vm_state.rstack.get(vm_state.rstack.len() - 1) {
+            if vm_state.pc == *auto_return {
+                vm_state.pc = *to;
+                vm_state.rstack.pop();
+            }
+        }
     }
 }
 
-fn invoke(vm_state: &mut VmState) -> Result<(), String> {
+fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
     let stack = &mut vm_state.stack;
     let rstack = &mut vm_state.rstack;
     let (arg, fun) = (stack.pop().unwrap(), stack.pop().unwrap());
@@ -126,10 +142,19 @@ fn invoke(vm_state: &mut VmState) -> Result<(), String> {
                 stack.push(arg.clone());
                 stack.push(val2.clone());
                 stack.push(arg.clone());
-                rstack.push(vm_state.pc + 1);
+                rstack.push((vm_state.pc + 1, K2_CODE.len()));
                 vm_state.pc = 0;
             }
             Function::V => stack.push(fun.clone()),
+            Function::D => panic!("d operator invoked"),
+            Function::D1(at) => {
+                if let OpCode::CheckSuspend(offset) = code[*at - 1] {
+                    rstack.push((vm_state.pc + 1, *at - 1 + offset));
+                    vm_state.pc = *at;
+                } else {
+                    panic!("promise does not point to after a CheckSuspend opcode");
+                }
+            }
             Function::Dot(ch) => {
                 print!("{}", ch);
                 stack.push(arg);
@@ -148,8 +173,12 @@ fn compile(st: &SyntaxTree, code: &mut Vec<OpCode>) -> Result<(), String> {
         SyntaxTree::Combinator(c) => code.push(OpCode::PushImmediate(*c)),
         SyntaxTree::Application(Application { func, arg }) => {
             compile(func, code)?;
+            let placeholder_position = code.len();
+            code.push(OpCode::Placeholder);
             compile(arg, code)?;
             code.push(OpCode::Invoke);
+            let next_position = code.len();
+            code[placeholder_position] = OpCode::CheckSuspend(next_position - placeholder_position);
         }
     }
     Ok(())
