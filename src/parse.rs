@@ -23,6 +23,9 @@ pub enum Combinator {
     D,
     C,
     E,
+    Read,
+    Reprint,
+    Compare(char),
     Dot(char),
 }
 
@@ -77,6 +80,12 @@ fn parse<I: Iterator<Item = CharPos>>(iterator: &mut Peekable<I>) -> Result<Synt
         'd' => Ok(SyntaxTree::Combinator(Combinator::D)),
         'c' => Ok(SyntaxTree::Combinator(Combinator::C)),
         'e' => Ok(SyntaxTree::Combinator(Combinator::E)),
+        '@' => Ok(SyntaxTree::Combinator(Combinator::Read)),
+        '|' => Ok(SyntaxTree::Combinator(Combinator::Reprint)),
+        '?' => iterator
+            .next()
+            .map(|c| SyntaxTree::Combinator(Combinator::Compare(c.item)))
+            .ok_or_else(|| format!("unexpected EOF after `.` at {:?}", token.position)),
         '.' => iterator
             .next()
             .map(|c| SyntaxTree::Combinator(Combinator::Dot(c.item)))

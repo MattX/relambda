@@ -13,10 +13,13 @@
 // limitations under the License.
 
 use std::borrow::Borrow;
+use std::io::{stdin, Read};
+use std::ops::Deref;
 use std::rc::Rc;
 
+use unicode_reader::CodePoints;
+
 use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, SyntaxTree};
-use std::ops::Deref;
 
 mod parse;
 
@@ -34,6 +37,9 @@ pub enum Function {
     C,
     C1(Box<VmState>),
     E,
+    Read,
+    Reprint,
+    Compare(char),
     Dot(char),
 }
 
@@ -47,6 +53,9 @@ impl Function {
             Combinator::D => Function::D,
             Combinator::C => Function::C,
             Combinator::E => Function::E,
+            Combinator::Read => Function::Read,
+            Combinator::Reprint => Function::Reprint,
+            Combinator::Compare(ch) => Function::Compare(ch),
             Combinator::Dot(ch) => Function::Dot(ch),
         }
     }
@@ -92,6 +101,7 @@ pub struct VmState {
     stack: Vec<Rc<Function>>,
     rstack: Vec<(usize, usize)>,
     pc: usize,
+    cur_char: Option<char>,
 }
 
 impl VmState {
@@ -116,6 +126,7 @@ impl Default for VmState {
             stack: Vec::new(),
             rstack: Vec::new(),
             pc: 0,
+            cur_char: None,
         }
     }
 }
@@ -161,7 +172,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
                 if let Some(ret) = invoke(code, &mut vm_state)? {
                     return Ok(ret);
                 }
-            },
+            }
             OpCode::Finish => {
                 debug_assert_eq!(vm_state.stack.len(), 1);
                 // The rstack should contain our sentinel return point
@@ -173,11 +184,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
-        //println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
+        println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
 
         let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
         if vm_state.pc == from {
-            //println!("Jumping down {} → {}", vm_state.pc, to);
+            println!("Jumping down {} → {}", vm_state.pc, to);
             vm_state.pc = to;
             vm_state.rstack.pop();
         }
@@ -213,29 +224,58 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             }
         }
         Function::C => {
-            vm_state.stack.push(arg);
             let saved_state = vm_state.clone();
+            vm_state.stack.push(arg);
             vm_state
                 .stack
                 .push(Rc::new(Function::C1(Box::new(saved_state))));
+
             // We now want to invoke the arg with the newly-created C1. It is guaranteed that
             // the instruction under the program counter is Invoke, so we can just avoid
             // advancing the PC.
-            debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
         }
         Function::C1(cont) => {
             vm_state.stack = cont.stack.clone();
+            vm_state.stack.push(arg);
             vm_state.rstack = cont.rstack.clone();
             vm_state.pc = cont.pc;
         }
         Function::E => return Ok(Some(arg)),
+        Function::Read => {
+            let ch = CodePoints::from(stdin().bytes())
+                .next()
+                .and_then(|v| v.ok());
+            vm_state.cur_char = ch;
+            vm_state.stack.push(arg);
+            vm_state.stack.push(Rc::new(if ch.is_some() {
+                Function::I
+            } else {
+                Function::V
+            }));
+        }
+        Function::Reprint => {
+            let fun = vm_state.cur_char.map_or(Function::V, |c| Function::Dot(c));
+            vm_state.stack.push(arg);
+            vm_state.stack.push(Rc::new(fun));
+        }
+        Function::Compare(ch) => {
+            let is_same = vm_state.cur_char.map_or(false, |c| c == *ch);
+            vm_state.stack.push(arg);
+            vm_state
+                .stack
+                .push(Rc::new(if is_same { Function::I } else { Function::V }));
+        }
         Function::Dot(ch) => {
             print!("{}", ch);
             vm_state.stack.push(arg);
         }
     }
     match fun.borrow() {
-        Function::S2(_, _) | Function::D1(_) | Function::C => (),
+        Function::S2(_, _) | Function::D1(_) => (),
+        // The following functions do not advance the pc in order to call OpCode::Invoke again
+        Function::C | Function::Read | Function::Reprint => {
+            debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
+        }
         _ => vm_state.pc += 1,
     }
     Ok(None)
@@ -263,7 +303,7 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
-    //println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
+    println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
     Ok((code, entry_point))
 }
 

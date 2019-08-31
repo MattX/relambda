@@ -43,4 +43,18 @@ fn test_force_promise() {
 #[test]
 fn test_call_cc() {
     assert_eq!(parse_compile_run(&"``cii").unwrap(), Function::I);
+    assert_eq!(parse_compile_run(&"``cir").unwrap(), Function::Dot('\n'));
+    assert_eq!(parse_compile_run(&"`c``s`kr``si`ki").unwrap(), Function::I);
+}
+
+#[test]
+fn test_iv_boolean() {
+    assert_eq!(
+        parse_compile_run(&"`````s`kc``s`k`s`k`k`ki``ss`k`kkiks").unwrap(),
+        Function::K
+    );
+    assert_eq!(
+        parse_compile_run(&"`````s`kc``s`k`s`k`k`ki``ss`k`kkvks").unwrap(),
+        Function::S
+    );
 }
