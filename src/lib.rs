@@ -79,11 +79,7 @@ const K2_CODE: [OpCode; K2_LEN] = [
 const D1_START: usize = K2_END;
 const D1_LEN: usize = 2;
 const D1_END: usize = D1_START + D1_LEN;
-const D1_CODE: [OpCode; D1_LEN] = [
-    OpCode::Swap,
-    OpCode::Invoke,
-];
-
+const D1_CODE: [OpCode; D1_LEN] = [OpCode::Swap, OpCode::Invoke];
 
 /// Structure representing the state of the VM.
 ///
@@ -109,6 +105,10 @@ impl VmState {
         } else {
             self.rstack.push((to, from));
         }
+        debug_assert_ne!(
+            self.rstack[self.rstack.len() - 2].1,
+            self.rstack[self.rstack.len() - 1].0
+        );
     }
 }
 
@@ -191,12 +191,16 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
     match fun.borrow() {
         Value::Function(f) => match f {
             Function::I => vm_state.stack.push(arg),
-            Function::K => vm_state.stack.push(Rc::new(Value::Function(Function::K1(arg)))),
+            Function::K => vm_state
+                .stack
+                .push(Rc::new(Value::Function(Function::K1(arg)))),
             Function::K1(val) => vm_state.stack.push(val.clone()),
-            Function::S => vm_state.stack.push(Rc::new(Value::Function(Function::S1(arg)))),
-            Function::S1(val) => {
-                vm_state.stack.push(Rc::new(Value::Function(Function::S2(val.clone(), arg))))
-            }
+            Function::S => vm_state
+                .stack
+                .push(Rc::new(Value::Function(Function::S1(arg)))),
+            Function::S1(val) => vm_state
+                .stack
+                .push(Rc::new(Value::Function(Function::S2(val.clone(), arg)))),
             Function::S2(val1, val2) => {
                 vm_state.stack.push(val1.clone());
                 vm_state.stack.push(arg.clone());
@@ -220,8 +224,15 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
             Function::C => {
                 let saved_state = vm_state.clone();
                 vm_state.stack.push(arg);
-                vm_state.stack.push(Rc::new(Value::Function(Function::C1(Box::new(saved_state)))));
-                invoke(code, vm_state)?;
+                vm_state
+                    .stack
+                    .push(Rc::new(Value::Function(Function::C1(Box::new(
+                        saved_state,
+                    )))));
+                // We now want to invoke the arg with the newly-created C1. It is guaranteed that
+                // the instruction under the program counter is Invoke, so we can just avoid
+                // advancing the PC.
+                debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
             }
             Function::C1(cont) => {
                 vm_state.stack = cont.stack.clone();
@@ -235,7 +246,9 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
         },
     }
     match fun.borrow() {
-        Value::Function(Function::S2(_, _)) | Value::Function(Function::D1(_)) => (),
+        Value::Function(Function::S2(_, _))
+        | Value::Function(Function::D1(_))
+        | Value::Function(Function::C) => (),
         _ => vm_state.pc += 1,
     }
     Ok(())
