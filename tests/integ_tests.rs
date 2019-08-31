@@ -13,11 +13,41 @@
 // limitations under the License.
 
 use rul::{parse_compile_run, Function, Value};
+use std::rc::Rc;
 
 #[test]
-fn test_i() {
+fn test_iks_basic() {
     assert_eq!(
         parse_compile_run(&"```skss").unwrap(),
         Value::Function(Function::S)
+    );
+    assert_eq!(
+        parse_compile_run(&"`ii").unwrap(),
+        Value::Function(Function::I)
+    );
+    assert_eq!(
+        parse_compile_run(&"``ksi").unwrap(),
+        Value::Function(Function::S)
+    )
+}
+
+#[test]
+fn test_d_promise() {
+    let suspended = parse_compile_run(&"`d`ir").unwrap();
+    match suspended {
+        Value::Function(Function::D1(_)) => (),
+        _ => panic!("expected promise"),
+    }
+}
+
+#[test]
+fn test_force_promise() {
+    assert_eq!(
+        parse_compile_run(&"``d`iri").unwrap(),
+        Value::Function(Function::I)
+    );
+    assert_eq!(
+        parse_compile_run(&"``d```skssi").unwrap(),
+        Value::Function(Function::S1(Rc::new(Value::Function(Function::I))))
     );
 }

@@ -63,13 +63,25 @@ enum OpCode {
     Finish,
 }
 
-const K2_CODE: [OpCode; 5] = [
+const K2_START: usize = 0;
+const K2_LEN: usize = 5;
+const K2_END: usize = K2_START + K2_LEN;
+const K2_CODE: [OpCode; K2_LEN] = [
     OpCode::Invoke,
     OpCode::Rot,
     OpCode::Invoke,
     OpCode::Swap,
     OpCode::Invoke,
 ];
+
+const D1_START: usize = K2_END;
+const D1_LEN: usize = 2;
+const D1_END: usize = D1_START + D1_LEN;
+const D1_CODE: [OpCode; D1_LEN] = [
+    OpCode::Swap,
+    OpCode::Invoke,
+];
+
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct VmState {
@@ -142,10 +154,14 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
             _ => vm_state.pc += 1,
         }
         println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
-        if let Some((to, auto_return)) = vm_state.rstack.get(vm_state.rstack.len() - 1) {
-            if vm_state.pc == *auto_return {
-                vm_state.pc = *to;
+        loop {
+            let (to, return_position) = vm_state.rstack[vm_state.rstack.len() - 1];
+            if vm_state.pc == return_position {
+                println!("Jumping down {} → {}", vm_state.pc, to);
+                vm_state.pc = to;
                 vm_state.rstack.pop();
+            } else {
+                break
             }
         }
     }
@@ -169,17 +185,19 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
                 stack.push(arg.clone());
                 stack.push(val2.clone());
                 stack.push(arg.clone());
-                rstack.push((vm_state.pc + 1, K2_CODE.len()));
-                vm_state.pc = 0;
+                rstack.push((vm_state.pc + 1, K2_END));
+                vm_state.pc = K2_START;
             }
             Function::V => stack.push(fun.clone()),
             Function::D => panic!("d operator invoked"),
             Function::D1(at) => {
                 if let OpCode::CheckSuspend(offset) = code[*at - 1] {
-                    rstack.push((vm_state.pc + 1, *at - 1 + offset));
+                    stack.push(arg);
+                    rstack.push((vm_state.pc + 1, D1_END));
+                    rstack.push((D1_START, *at - 2 + offset));
                     vm_state.pc = *at;
                 } else {
-                    panic!("promise does not point to after a CheckSuspend opcode");
+                    panic!("promise does not point to a CheckSuspend opcode");
                 }
             }
             Function::Dot(ch) => {
@@ -189,7 +207,7 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
         },
     }
     match fun.borrow() {
-        Value::Function(Function::S2(_, _)) => (),
+        Value::Function(Function::S2(_, _)) | Value::Function(Function::D1(_)) => (),
         _ => vm_state.pc += 1,
     }
     Ok(())
@@ -213,9 +231,11 @@ fn compile(st: &SyntaxTree, code: &mut Vec<OpCode>) -> Result<(), String> {
 
 fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let mut code = K2_CODE.to_vec();
+    code.extend_from_slice(&D1_CODE);
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
+    println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
     Ok((code, entry_point))
 }
 
