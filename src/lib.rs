@@ -1,5 +1,18 @@
+// Copyright 2019 Matthieu Felix
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::borrow::Borrow;
-use std::io::{stdin, stdout, Write};
 use std::rc::Rc;
 
 use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, SyntaxTree};
@@ -7,7 +20,7 @@ use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, Syn
 mod parse;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum Value {
+pub enum Value {
     Function(Function),
 }
 
@@ -26,7 +39,7 @@ impl Value {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum Function {
+pub enum Function {
     I,
     K,
     K1(Rc<Value>),
@@ -78,6 +91,11 @@ impl Default for VmState {
 fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
     let mut vm_state = VmState::default();
     vm_state.pc = entry_point;
+
+    // The loop expects a top element on the return stack in order to check for auto-returns.
+    // Add a sentinel here that will never trigger, and would jump to an illegal location if it did.
+    vm_state.rstack.push((code.len(), code.len()));
+
     loop {
         let opcode = code[vm_state.pc];
         match opcode {
@@ -99,15 +117,23 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
                 vm_state.stack.push(snd);
             }
             OpCode::CheckSuspend(offset) => {
-                if let Value::Function(Function::D) = vm_state.stack[vm_state.stack.len() - 1].borrow() {
+                if let Value::Function(Function::D) =
+                    vm_state.stack[vm_state.stack.len() - 1].borrow()
+                {
                     vm_state.stack.pop().unwrap();
-                    vm_state.stack.push(Rc::new(Value::Function(Function::D1(vm_state.pc + 1))));
+                    vm_state
+                        .stack
+                        .push(Rc::new(Value::Function(Function::D1(vm_state.pc + 1))));
                     vm_state.pc += offset;
+                } else {
+                    vm_state.pc += 1;
                 }
             }
             OpCode::Invoke => invoke(code, &mut vm_state)?,
             OpCode::Finish => {
                 debug_assert_eq!(vm_state.stack.len(), 1);
+                // The rstack should contain our sentinel return point
+                debug_assert_eq!(vm_state.rstack, [(code.len(), code.len())]);
                 return Ok(vm_state.stack.pop().unwrap());
             }
         }
@@ -115,6 +141,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
+        println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
         if let Some((to, auto_return)) = vm_state.rstack.get(vm_state.rstack.len() - 1) {
             if vm_state.pc == *auto_return {
                 vm_state.pc = *to;
@@ -192,29 +219,12 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     Ok((code, entry_point))
 }
 
-fn parse_compile_run(code: &str) -> Result<Rc<Value>, String> {
+pub fn parse_compile_run(code: &str) -> Result<Value, String> {
     let st = parse_toplevel(&mut CharPosIterator::new(code.chars()).peekable())?;
     //let mut paren = String::new();
     //print_parenthesized(&st, 0, 0, &mut paren);
     //println!("P> {}", &paren);
     let (code, entry_point) = compile_toplevel(&st)?;
     //println!("C> {:?}, {}", &code, &entry_point);
-    run_vm(&code, entry_point)
-}
-
-fn main() {
-    let mut input = String::new();
-    loop {
-        print!(">> ");
-        stdout().flush().unwrap();
-        input.clear();
-        stdin().read_line(&mut input).unwrap();
-        if &input.trim().to_lowercase() == "exit" {
-            break;
-        }
-        match parse_compile_run(&input) {
-            Ok(v) => println!("=> {:?}", v),
-            Err(e) => println!("!! {}", e),
-        }
-    }
+    run_vm(&code, entry_point).map(|v| (*v).clone())
 }
