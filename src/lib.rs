@@ -16,17 +16,29 @@ use std::borrow::Borrow;
 use std::rc::Rc;
 
 use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, SyntaxTree};
+use std::ops::Deref;
 
 mod parse;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Value {
-    Function(Function),
+pub enum Function {
+    I,
+    K,
+    K1(Rc<Function>),
+    S,
+    S1(Rc<Function>),
+    S2(Rc<Function>, Rc<Function>),
+    V,
+    D,
+    D1(usize),
+    C,
+    C1(Box<VmState>),
+    Dot(char),
 }
 
-impl Value {
-    pub fn from_combinator(c: Combinator) -> Self {
-        Self::Function(match c {
+impl Function {
+    fn from_combinator(c: Combinator) -> Self {
+        match c {
             Combinator::I => Function::I,
             Combinator::K => Function::K,
             Combinator::S => Function::S,
@@ -34,24 +46,8 @@ impl Value {
             Combinator::D => Function::D,
             Combinator::C => Function::C,
             Combinator::Dot(ch) => Function::Dot(ch),
-        })
+        }
     }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Function {
-    I,
-    K,
-    K1(Rc<Value>),
-    S,
-    S1(Rc<Value>),
-    S2(Rc<Value>, Rc<Value>),
-    V,
-    D,
-    D1(usize),
-    C,
-    C1(Box<VmState>),
-    Dot(char),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -91,7 +87,7 @@ const D1_CODE: [OpCode; D1_LEN] = [OpCode::Swap, OpCode::Invoke];
 /// invariant is that `stack[-1].to != stack[-2].from`.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VmState {
-    stack: Vec<Rc<Value>>,
+    stack: Vec<Rc<Function>>,
     rstack: Vec<(usize, usize)>,
     pc: usize,
 }
@@ -122,7 +118,7 @@ impl Default for VmState {
     }
 }
 
-fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
+fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
     let mut vm_state = VmState::default();
     vm_state.pc = entry_point;
 
@@ -134,7 +130,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
         let opcode = code[vm_state.pc];
         match opcode {
             OpCode::Placeholder => panic!("placeholder not replaced during compilation."),
-            OpCode::PushImmediate(c) => vm_state.stack.push(Rc::new(Value::from_combinator(c))),
+            OpCode::PushImmediate(c) => vm_state.stack.push(Rc::new(Function::from_combinator(c))),
             OpCode::Rot => {
                 let (fst, snd, thr) = (
                     vm_state.stack.pop().unwrap(),
@@ -151,13 +147,9 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
                 vm_state.stack.push(snd);
             }
             OpCode::CheckSuspend(offset) => {
-                if let Value::Function(Function::D) =
-                    vm_state.stack[vm_state.stack.len() - 1].borrow()
-                {
+                if vm_state.stack[vm_state.stack.len() - 1].deref() == &Function::D {
                     vm_state.stack.pop().unwrap();
-                    vm_state
-                        .stack
-                        .push(Rc::new(Value::Function(Function::D1(vm_state.pc + 1))));
+                    vm_state.stack.push(Rc::new(Function::D1(vm_state.pc + 1)));
                     vm_state.pc += offset;
                 } else {
                     vm_state.pc += 1;
@@ -189,66 +181,54 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Value>, String> {
 fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<(), String> {
     let (arg, fun) = (vm_state.stack.pop().unwrap(), vm_state.stack.pop().unwrap());
     match fun.borrow() {
-        Value::Function(f) => match f {
-            Function::I => vm_state.stack.push(arg),
-            Function::K => vm_state
-                .stack
-                .push(Rc::new(Value::Function(Function::K1(arg)))),
-            Function::K1(val) => vm_state.stack.push(val.clone()),
-            Function::S => vm_state
-                .stack
-                .push(Rc::new(Value::Function(Function::S1(arg)))),
-            Function::S1(val) => vm_state
-                .stack
-                .push(Rc::new(Value::Function(Function::S2(val.clone(), arg)))),
-            Function::S2(val1, val2) => {
-                vm_state.stack.push(val1.clone());
-                vm_state.stack.push(arg.clone());
-                vm_state.stack.push(val2.clone());
-                vm_state.stack.push(arg.clone());
-                vm_state.push_rstack(vm_state.pc + 1, K2_END);
-                vm_state.pc = K2_START;
-            }
-            Function::V => vm_state.stack.push(fun.clone()),
-            Function::D => panic!("d operator invoked"),
-            Function::D1(at) => {
-                if let OpCode::CheckSuspend(offset) = code[*at - 1] {
-                    vm_state.stack.push(arg);
-                    vm_state.push_rstack(vm_state.pc + 1, D1_END);
-                    vm_state.push_rstack(D1_START, *at - 2 + offset);
-                    vm_state.pc = *at;
-                } else {
-                    panic!("promise does not point to a CheckSuspend opcode");
-                }
-            }
-            Function::C => {
-                let saved_state = vm_state.clone();
+        Function::I => vm_state.stack.push(arg),
+        Function::K => vm_state.stack.push(Rc::new(Function::K1(arg))),
+        Function::K1(val) => vm_state.stack.push(val.clone()),
+        Function::S => vm_state.stack.push(Rc::new(Function::S1(arg))),
+        Function::S1(val) => vm_state.stack.push(Rc::new(Function::S2(val.clone(), arg))),
+        Function::S2(val1, val2) => {
+            vm_state.stack.push(val1.clone());
+            vm_state.stack.push(arg.clone());
+            vm_state.stack.push(val2.clone());
+            vm_state.stack.push(arg.clone());
+            vm_state.push_rstack(vm_state.pc + 1, K2_END);
+            vm_state.pc = K2_START;
+        }
+        Function::V => vm_state.stack.push(fun.clone()),
+        Function::D => panic!("d operator invoked"),
+        Function::D1(at) => {
+            if let OpCode::CheckSuspend(offset) = code[*at - 1] {
                 vm_state.stack.push(arg);
-                vm_state
-                    .stack
-                    .push(Rc::new(Value::Function(Function::C1(Box::new(
-                        saved_state,
-                    )))));
-                // We now want to invoke the arg with the newly-created C1. It is guaranteed that
-                // the instruction under the program counter is Invoke, so we can just avoid
-                // advancing the PC.
-                debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
+                vm_state.push_rstack(vm_state.pc + 1, D1_END);
+                vm_state.push_rstack(D1_START, *at - 2 + offset);
+                vm_state.pc = *at;
+            } else {
+                panic!("promise does not point to a CheckSuspend opcode");
             }
-            Function::C1(cont) => {
-                vm_state.stack = cont.stack.clone();
-                vm_state.rstack = cont.rstack.clone();
-                vm_state.pc = cont.pc;
-            }
-            Function::Dot(ch) => {
-                print!("{}", ch);
-                vm_state.stack.push(arg);
-            }
-        },
+        }
+        Function::C => {
+            let saved_state = vm_state.clone();
+            vm_state.stack.push(arg);
+            vm_state
+                .stack
+                .push(Rc::new(Function::C1(Box::new(saved_state))));
+            // We now want to invoke the arg with the newly-created C1. It is guaranteed that
+            // the instruction under the program counter is Invoke, so we can just avoid
+            // advancing the PC.
+            debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
+        }
+        Function::C1(cont) => {
+            vm_state.stack = cont.stack.clone();
+            vm_state.rstack = cont.rstack.clone();
+            vm_state.pc = cont.pc;
+        }
+        Function::Dot(ch) => {
+            print!("{}", ch);
+            vm_state.stack.push(arg);
+        }
     }
     match fun.borrow() {
-        Value::Function(Function::S2(_, _))
-        | Value::Function(Function::D1(_))
-        | Value::Function(Function::C) => (),
+        Function::S2(_, _) | Function::D1(_) | Function::C => (),
         _ => vm_state.pc += 1,
     }
     Ok(())
@@ -280,7 +260,7 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     Ok((code, entry_point))
 }
 
-pub fn parse_compile_run(code: &str) -> Result<Value, String> {
+pub fn parse_compile_run(code: &str) -> Result<Function, String> {
     let st = parse_toplevel(&mut CharPosIterator::new(code.chars()).peekable())?;
     let (code, entry_point) = compile_toplevel(&st)?;
     run_vm(&code, entry_point).map(|v| (*v).clone())
