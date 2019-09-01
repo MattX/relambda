@@ -1,7 +1,8 @@
 [package]
-name = "rul"
+name = "relambda"
 version = "0.1.0"
 authors = ["Matthieu Felix <matthieufelix@gmail.com>"]
+description = "A bytecode-compiling Unlambda 2.0 intepreter"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
