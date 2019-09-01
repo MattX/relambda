@@ -96,20 +96,30 @@ pub enum Expression {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum OpCode {
+    /// Used during compilation phase to reserve a spot for an instruction that we don't know yet.
     Placeholder,
+    /// Push the given combinator to the stack.
     PushImmediate(Combinator),
+    /// Swap the two top values on the stack.
     Swap,
+    /// Move the top stack value to third position, moving second and third to first and second,
+    /// respectively.
     Rot,
+    /// If the function about to be invoked is a d, create a promise instead of applying.
     CheckSuspend(usize),
+    /// If the function about to be invoked is a d, abort invocation and use the promise on the
+    /// stack.
     CheckDynamicSuspend(usize),
+    /// Apply the value in top position of the stack to the value in second position.
     Invoke,
+    /// Exit the program.
     Finish,
 }
 
-const K2_START: usize = 0;
-const K2_LEN: usize = 5;
-const K2_END: usize = K2_START + K2_LEN;
-const K2_CODE: [OpCode; K2_LEN] = [
+const S2_START: usize = 0;
+const S2_LEN: usize = 5;
+const S2_END: usize = S2_START + S2_LEN;
+const S2_CODE: [OpCode; S2_LEN] = [
     OpCode::Invoke,
     OpCode::CheckDynamicSuspend(4),
     OpCode::Rot,
@@ -117,12 +127,12 @@ const K2_CODE: [OpCode; K2_LEN] = [
     OpCode::Invoke,
 ];
 
-const D1_START: usize = K2_END;
-const D1_LEN: usize = 2;
-const D1_END: usize = D1_START + D1_LEN;
-const D1_CODE: [OpCode; D1_LEN] = [OpCode::Swap, OpCode::Invoke];
+const D1_PROMISE_START: usize = S2_END;
+const D1_PROMISE_LEN: usize = 2;
+const D1_PROMISE_END: usize = D1_PROMISE_START + D1_PROMISE_LEN;
+const D1_PROMISE_CODE: [OpCode; D1_PROMISE_LEN] = [OpCode::Swap, OpCode::Invoke];
 
-const D1_APPLICATION_START: usize = D1_END;
+const D1_APPLICATION_START: usize = D1_PROMISE_END;
 const D1_APPLICATION_LEN: usize = 3;
 const D1_APPLICATION_END: usize = D1_APPLICATION_START + D1_APPLICATION_LEN;
 const D1_APPLICATION_CODE: [OpCode; D1_APPLICATION_LEN] =
@@ -211,6 +221,9 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
                 }
             }
             OpCode::CheckDynamicSuspend(offset) => {
+                // During a CheckDynamicSuspend, the stack is guaranteed to be set up as
+                // top→ (operator) (promise of operand) (operand's operator) (operand's operand)
+                // If the operator is D, drop the operand members; otherwise, drop the promise.
                 let operator = vm_state.stack.pop().unwrap();
                 if operator.deref() == &Function::D {
                     let promise = vm_state.stack.pop().unwrap();
@@ -260,7 +273,10 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         Function::S => vm_state.stack.push(Rc::new(Function::S1(arg))),
         Function::S1(val) => vm_state.stack.push(Rc::new(Function::S2(val.clone(), arg))),
         Function::S2(val1, val2) => {
-            // We want to compute ``(val1)(arg)`(val2)(arg).
+            // We want to compute ``(val1)(arg)`(val2)(arg), evaluating `(val1)(arg) first.
+            // If `(val1)(arg) evaluates to D, we'll need to create a promise instead of doing
+            // a normal application. Push that promise on the stack; the S2 microcode will take
+            // care of either dropping or using it.
             vm_state.stack.push(val2.clone());
             vm_state.stack.push(arg.clone());
             vm_state
@@ -271,18 +287,22 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
                 ))));
             vm_state.stack.push(val1.clone());
             vm_state.stack.push(arg.clone());
-            vm_state.push_rstack(vm_state.pc + 1, K2_END);
-            vm_state.pc = K2_START;
+            vm_state.push_rstack(vm_state.pc + 1, S2_END);
+            vm_state.pc = S2_START;
         }
         Function::V => vm_state.stack.push(fun.clone()),
         Function::D => vm_state
             .stack
             .push(Rc::new(Function::D1(Expression::Function(arg)))),
         Function::D1(Expression::Promise(at)) => {
+            // The promise object points to a location in the code which contains the necessary
+            // instructions to force the promise. The instructions in question end just before
+            // the CheckSuspend jump target. Once we are done forcing the promise, we need to
+            // return into D1 microcode to perform the actual application.
             if let OpCode::CheckSuspend(offset) = code[*at - 1] {
                 vm_state.stack.push(arg);
-                vm_state.push_rstack(vm_state.pc + 1, D1_END);
-                vm_state.push_rstack(D1_START, *at - 2 + offset);
+                vm_state.push_rstack(vm_state.pc + 1, D1_PROMISE_END);
+                vm_state.push_rstack(D1_PROMISE_START, *at - 2 + offset);
                 vm_state.pc = *at;
             } else {
                 panic!("promise does not point to a CheckSuspend opcode");
@@ -349,7 +369,6 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         | Function::D1(Expression::Promise(_))
         | Function::D1(Expression::Application(_, _)) => (),
         // The following do not advance the pc in order to call OpCode::Invoke again
-        // Function::D1(Expression::Function(_)) falls in this case, but we've covered it above.
         Function::C
         | Function::Read
         | Function::Reprint
@@ -379,8 +398,8 @@ fn compile(st: &SyntaxTree, code: &mut Vec<OpCode>) -> Result<(), String> {
 }
 
 fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
-    let mut code = K2_CODE.to_vec();
-    code.extend_from_slice(&D1_CODE);
+    let mut code = S2_CODE.to_vec();
+    code.extend_from_slice(&D1_PROMISE_CODE);
     code.extend_from_slice(&D1_APPLICATION_CODE);
     let entry_point = code.len();
     compile(st, &mut code)?;
