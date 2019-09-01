@@ -1,0 +1,26 @@
+# This program produces a stream of stars and spaces.  The stream is
+# never periodic.  The mean density of stars is the inverse golden
+# ratio.
+#
+# <program> is `<main><halfloop>
+# <main> is ^h``$h$h<fun0>
+# <halfloop> is ^h^u`````$u.*. $h$h`<update>$u
+# <update> is ^u^p^q``$u$q^x`$p`$q$x
+# <fun0> is ^p^q$p
+#
+# <program> is `<main><halfloop>
+# <main> is ``s``sii`k<fun0>
+# <halfloop> is ``s``s`ks``s``s`ks``s``s`ks``s``s`ks``s``s`ks`ki``s`kk`k.*``s`kk`k. ``s`kki``s`kki``s``s`ks``s`kk`k<update>`ki
+# <update> is ``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kki``s`kk`ki``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`kk``s``s`ks``s`kk`kk`ki``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`kk``s`kk`ki``s``s`ks``s`kk`kk``s`kk`ki
+# <fun0> is ``s`kki
+#
+# <program> is ```s``sii`k``s`kki``s``s`ks``s``s`ks``s``s`ks``s``s`ks``s``s`ks`ki``s`kk`k.*``s`kk`k. ``s`kki``s`kki``s``s`ks``s`kk`k``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kki``s`kk`ki``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`kk``s``s`ks``s`kk`kk`ki``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`kk``s`kk`ki``s``s`ks``s`kk`kk``s`kk`ki`ki
+#
+```s``sii`k``s`kki``s``s`ks``s``s`ks``s``s`ks``s``s`ks``s``s`ks`ki``s`
+kk`k.*``s`kk`k. ``s`kki``s`kki``s``s`ks``s`kk`k``s``s`ks``s``s`ks``s`k
+k`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kki``s`kk`ki``s``
+s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s
+`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s`kk`kk``s``s`ks`
+`s`kk`kk`ki``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``
+s`ks``s`kk`kk``s`kk`ks``s``s`ks``s``s`ks``s`kk`ks``s``s`ks``s`kk`kk``s
+`kk`kk``s`kk`ki``s``s`ks``s`kk`kk``s`kk`ki`ki

@@ -33,7 +33,7 @@ pub enum Function {
     S2(Rc<Function>, Rc<Function>),
     V,
     D,
-    D1(usize),
+    D1(Expression),
     C,
     C1(Box<VmState>),
     E,
@@ -59,6 +59,12 @@ impl Function {
             Combinator::Dot(ch) => Function::Dot(ch),
         }
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Expression {
+    Promise(usize),
+    Function(Rc<Function>),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -162,7 +168,9 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             OpCode::CheckSuspend(offset) => {
                 if vm_state.stack[vm_state.stack.len() - 1].deref() == &Function::D {
                     vm_state.stack.pop().unwrap();
-                    vm_state.stack.push(Rc::new(Function::D1(vm_state.pc + 1)));
+                    vm_state
+                        .stack
+                        .push(Rc::new(Function::D1(Expression::Promise(vm_state.pc + 1))));
                     vm_state.pc += offset;
                 } else {
                     vm_state.pc += 1;
@@ -184,11 +192,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
-        println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
+        //println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
 
         let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
         if vm_state.pc == from {
-            println!("Jumping down {} → {}", vm_state.pc, to);
+            //println!("Jumping down {} → {}", vm_state.pc, to);
             vm_state.pc = to;
             vm_state.rstack.pop();
         }
@@ -212,8 +220,10 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             vm_state.pc = K2_START;
         }
         Function::V => vm_state.stack.push(fun.clone()),
-        Function::D => panic!("d operator invoked"),
-        Function::D1(at) => {
+        Function::D => vm_state
+            .stack
+            .push(Rc::new(Function::D1(Expression::Function(arg)))),
+        Function::D1(Expression::Promise(at)) => {
             if let OpCode::CheckSuspend(offset) = code[*at - 1] {
                 vm_state.stack.push(arg);
                 vm_state.push_rstack(vm_state.pc + 1, D1_END);
@@ -223,16 +233,16 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
                 panic!("promise does not point to a CheckSuspend opcode");
             }
         }
+        Function::D1(Expression::Function(f)) => {
+            vm_state.stack.push(f.clone());
+            vm_state.stack.push(arg);
+        }
         Function::C => {
             let saved_state = vm_state.clone();
             vm_state.stack.push(arg);
             vm_state
                 .stack
                 .push(Rc::new(Function::C1(Box::new(saved_state))));
-
-            // We now want to invoke the arg with the newly-created C1. It is guaranteed that
-            // the instruction under the program counter is Invoke, so we can just avoid
-            // advancing the PC.
         }
         Function::C1(cont) => {
             vm_state.stack = cont.stack.clone();
@@ -271,9 +281,11 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         }
     }
     match fun.borrow() {
-        Function::S2(_, _) | Function::D1(_) => (),
-        // The following functions do not advance the pc in order to call OpCode::Invoke again
-        Function::C | Function::Read | Function::Reprint => {
+        // The following do not advance the pc because they've just set it
+        Function::S2(_, _) | Function::D1(Expression::Promise(_)) => (),
+        // The following do not advance the pc in order to call OpCode::Invoke again
+        // Function::D1(Expression::Function(_)) falls in this case, but we've covered it above.
+        Function::C | Function::Read | Function::Reprint | Function::D1(Expression::Function(_)) => {
             debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
         }
         _ => vm_state.pc += 1,
@@ -303,7 +315,10 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
-    println!("Compiled: {:?}", code.iter().enumerate().collect::<Vec<_>>());
+    println!(
+        "Compiled: {:?}",
+        code.iter().enumerate().collect::<Vec<_>>()
+    );
     Ok((code, entry_point))
 }
 

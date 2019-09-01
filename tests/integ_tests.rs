@@ -58,3 +58,8 @@ fn test_iv_boolean() {
         Function::S
     );
 }
+
+#[test]
+fn test_invoke_d() {
+    assert_eq!(parse_compile_run(&"```sddk").unwrap(), Function::K);
+}

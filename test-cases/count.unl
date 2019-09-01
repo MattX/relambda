@@ -1,0 +1,13 @@
+# This unlambda program prints the integers consecutively.  Each
+# integer n is printed as a line of n asterisks.
+````s``s`ks``s`k`si``s`kk``s`k
+                             `s``s`ksk # Increment
+                            ``s`k
+                                ``s``s``si`k.*`kri # Print n (and return n)
+                               i`ki
+  `ki # The number zero (replace by i to start from one)
+ ``s``s`ks``s`k`si``s`kk``s`k # Ditto (other half-loop)
+                            `s``s`ksk
+                           ``s`k
+                               ``s``s``si`k.*`kri
+                              i`ki
