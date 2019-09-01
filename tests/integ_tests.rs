@@ -12,11 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use rul::{parse_compile_run, Function};
 use std::rc::Rc;
+
+use lazy_static::{initialize, lazy_static};
+use log::Level;
+
+use rul::{parse_compile_run, Expression, Function};
+
+lazy_static! {
+    static ref LOGGER: () = {
+        stderrlog::new()
+            .verbosity(Level::Info as usize)
+            .init()
+            .unwrap();
+    };
+}
+
+fn setup_logging() {
+    initialize(&LOGGER);
+}
 
 #[test]
 fn test_iks_basic() {
+    setup_logging();
     assert_eq!(parse_compile_run(&"```skss").unwrap(), Function::S);
     assert_eq!(parse_compile_run(&"`ii").unwrap(), Function::I);
     assert_eq!(parse_compile_run(&"``ksi").unwrap(), Function::S)
@@ -24,6 +42,7 @@ fn test_iks_basic() {
 
 #[test]
 fn test_d_promise() {
+    setup_logging();
     let suspended = parse_compile_run(&"`d`ir").unwrap();
     match suspended {
         Function::D1(_) => (),
@@ -33,6 +52,7 @@ fn test_d_promise() {
 
 #[test]
 fn test_force_promise() {
+    setup_logging();
     assert_eq!(parse_compile_run(&"``d`iri").unwrap(), Function::I);
     assert_eq!(
         parse_compile_run(&"``d```skssi").unwrap(),
@@ -42,6 +62,7 @@ fn test_force_promise() {
 
 #[test]
 fn test_call_cc() {
+    setup_logging();
     assert_eq!(parse_compile_run(&"``cii").unwrap(), Function::I);
     assert_eq!(parse_compile_run(&"``cir").unwrap(), Function::Dot('\n'));
     assert_eq!(parse_compile_run(&"`c``s`kr``si`ki").unwrap(), Function::I);
@@ -49,6 +70,7 @@ fn test_call_cc() {
 
 #[test]
 fn test_iv_boolean() {
+    setup_logging();
     assert_eq!(
         parse_compile_run(&"`````s`kc``s`k`s`k`k`ki``ss`k`kkiks").unwrap(),
         Function::K
@@ -61,5 +83,11 @@ fn test_iv_boolean() {
 
 #[test]
 fn test_invoke_d() {
-    assert_eq!(parse_compile_run(&"```sddk").unwrap(), Function::K);
+    setup_logging();
+    assert_eq!(
+        parse_compile_run(&"```sddk").unwrap(),
+        Function::K1(Rc::new(Function::D1(Expression::Function(Rc::new(
+            Function::K
+        )))))
+    );
 }

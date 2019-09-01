@@ -17,6 +17,7 @@ use std::io::{stdin, Read};
 use std::ops::Deref;
 use std::rc::Rc;
 
+use log::debug;
 use unicode_reader::CodePoints;
 
 use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, SyntaxTree};
@@ -81,14 +82,13 @@ enum OpCode {
 }
 
 const K2_START: usize = 0;
-const K2_LEN: usize = 6;
+const K2_LEN: usize = 5;
 const K2_END: usize = K2_START + K2_LEN;
 const K2_CODE: [OpCode; K2_LEN] = [
     OpCode::Invoke,
-    OpCode::CheckDynamicSuspend(5),
+    OpCode::CheckDynamicSuspend(4),
     OpCode::Rot,
     OpCode::Invoke,
-    OpCode::Swap,
     OpCode::Invoke,
 ];
 
@@ -100,7 +100,8 @@ const D1_CODE: [OpCode; D1_LEN] = [OpCode::Swap, OpCode::Invoke];
 const D1_APPLICATION_START: usize = D1_END;
 const D1_APPLICATION_LEN: usize = 3;
 const D1_APPLICATION_END: usize = D1_APPLICATION_START + D1_APPLICATION_LEN;
-const D1_APPLICATION_CODE: [OpCode; D1_APPLICATION_LEN] = [OpCode::Invoke, OpCode::Swap, OpCode::Invoke];
+const D1_APPLICATION_CODE: [OpCode; D1_APPLICATION_LEN] =
+    [OpCode::Invoke, OpCode::Swap, OpCode::Invoke];
 
 /// Structure representing the state of the VM.
 ///
@@ -214,11 +215,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) | OpCode::CheckDynamicSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
-        //println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
+        debug!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
 
         let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
         if vm_state.pc == from {
-            //println!("Jumping down {} → {}", vm_state.pc, to);
+            debug!("Jumping down {} → {}", vm_state.pc, to);
             vm_state.pc = to;
             vm_state.rstack.pop();
         }
@@ -237,7 +238,12 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             // We want to compute ``(val1)(arg)`(val2)(arg).
             vm_state.stack.push(val2.clone());
             vm_state.stack.push(arg.clone());
-            vm_state.stack.push(Rc::new(Function::D1(Expression::Application(val1.clone(), val2.clone()))));
+            vm_state
+                .stack
+                .push(Rc::new(Function::D1(Expression::Application(
+                    val1.clone(),
+                    val2.clone(),
+                ))));
             vm_state.stack.push(val1.clone());
             vm_state.stack.push(arg.clone());
             vm_state.push_rstack(vm_state.pc + 1, K2_END);
@@ -350,12 +356,10 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
-    /*
-    println!(
+    debug!(
         "Compiled: {:?}",
         code.iter().enumerate().collect::<Vec<_>>()
     );
-    */
     Ok((code, entry_point))
 }
 

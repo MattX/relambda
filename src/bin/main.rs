@@ -15,12 +15,13 @@
 use std::fs::read_to_string;
 use std::io::{stdin, stdout, Write};
 
-use clap::{App, ArgMatches, Arg};
+use clap::{crate_version, App, Arg, ArgMatches};
+use log::Level;
 
 use rul::parse_compile_run;
 
 fn main() -> Result<(), ()> {
-    let args = get_args()?;
+    let args = get_args().ok_or(())?;
     match args.value_of("input_file") {
         Some(f) => run_file(f),
         None => repl(args.is_present("silent")),
@@ -44,7 +45,11 @@ fn repl(silent: bool) {
             break;
         }
         match parse_compile_run(&input) {
-            Ok(v) => if !silent {println!("=> {:?}", v)},
+            Ok(v) => {
+                if !silent {
+                    println!("=> {:?}", v)
+                }
+            }
             Err(e) => println!("!! {}", e),
         }
     }
@@ -58,18 +63,32 @@ fn run_file(fname: &str) {
     }
 }
 
-fn get_args() -> Result<ArgMatches<'static>, ()> {
+fn get_args() -> Option<ArgMatches<'static>> {
     let matches = App::new("relambda")
-        .arg(Arg::with_name("input_file")
-            .help("File to execute. If not set, will start a REPL."))
-        .arg(Arg::with_name("silent")
-            .short("s")
-            .long("silent")
-            .help("If in REPL mode, controls whether to show prompts and return values."))
+        .version(crate_version!())
+        .arg(Arg::with_name("input_file").help("File to execute. If not set, will start a REPL."))
+        .arg(
+            Arg::with_name("silent")
+                .short("s")
+                .long("silent")
+                .help("If in REPL mode, controls whether to show prompts and return values."),
+        )
+        .arg(
+            Arg::with_name("verbosity")
+                .short("v")
+                .multiple(true)
+                .help("Increase message verbosity"),
+        )
         .get_matches();
     if matches.is_present("input_file") && matches.is_present("silent") {
         println!("--silent cannot be used with an input file.");
-        return Err(());
+        return None;
     }
-    Ok(matches)
+    let verbosity = match matches.occurrences_of("verbosity") {
+        0 => 0,
+        1 => Level::Info as usize,
+        _ => Level::Trace as usize,
+    };
+    stderrlog::new().verbosity(verbosity).init().unwrap();
+    Some(matches)
 }

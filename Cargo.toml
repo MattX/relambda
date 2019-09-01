@@ -9,3 +9,8 @@ edition = "2018"
 [dependencies]
 clap = "2.33"
 unicode_reader = "1.0"
+log = "0.4.8"
+stderrlog = "0.4.1"
+
+[dev-dependencies]
+lazy_static = "1.4.0"
