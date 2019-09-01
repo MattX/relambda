@@ -156,7 +156,7 @@ pub struct VmState {
 
 impl VmState {
     fn push_rstack(&mut self, to: usize, from: usize) {
-        let (then_to, then_from) = self.rstack[self.rstack.len() - 1];
+        let (then_to, then_from) = *self.rstack.last().unwrap();
         if then_from == to {
             let last = self.rstack.len() - 1;
             self.rstack[last] = (then_to, from);
@@ -210,7 +210,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
                 vm_state.stack.push(snd);
             }
             OpCode::CheckSuspend(offset) => {
-                if vm_state.stack[vm_state.stack.len() - 1].deref() == &Function::D {
+                if vm_state.stack.last().unwrap().deref() == &Function::D {
                     vm_state.stack.pop().unwrap();
                     vm_state
                         .stack
@@ -222,18 +222,20 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             }
             OpCode::CheckDynamicSuspend(offset) => {
                 // During a CheckDynamicSuspend, the stack is guaranteed to be set up as
-                // top→ (operator) (promise of operand) (operand's operator) (operand's operand)
-                // If the operator is D, drop the operand members; otherwise, drop the promise.
-                let operator = vm_state.stack.pop().unwrap();
-                if operator.deref() == &Function::D {
-                    let promise = vm_state.stack.pop().unwrap();
-                    vm_state.stack.pop().unwrap();
-                    vm_state.stack.pop().unwrap();
-                    vm_state.stack.push(promise);
+                // top→ (operator) (operand's operand) (operand's operator)
+                // If the operator is D, create a promise from the next two elements.
+                if vm_state.stack.last().unwrap().deref() == &Function::D {
+                    vm_state.stack.pop().unwrap(); // Pop the D
+                    let operand_operand = vm_state.stack.pop().unwrap();
+                    let operand_operator = vm_state.stack.pop().unwrap();
+                    vm_state
+                        .stack
+                        .push(Rc::new(Function::D1(Expression::Application(
+                            operand_operator.clone(),
+                            operand_operand.clone(),
+                        ))));
                     vm_state.pc += offset;
                 } else {
-                    vm_state.stack.pop().unwrap();
-                    vm_state.stack.push(operator);
                     vm_state.pc += 1;
                 }
             }
@@ -255,7 +257,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
         }
         debug!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
 
-        let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
+        let (to, from) = *vm_state.rstack.last().unwrap();
         if vm_state.pc == from {
             debug!("Returning {} → {}", vm_state.pc, to);
             vm_state.pc = to;
@@ -274,17 +276,9 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         Function::S1(val) => vm_state.stack.push(Rc::new(Function::S2(val.clone(), arg))),
         Function::S2(val1, val2) => {
             // We want to compute ``(val1)(arg)`(val2)(arg), evaluating `(val1)(arg) first.
-            // If `(val1)(arg) evaluates to D, we'll need to create a promise instead of doing
-            // a normal application. Push that promise on the stack; the S2 microcode will take
-            // care of either dropping or using it.
+            // Push the necessary values on the stack, and hand it off to the S2 microcode.
             vm_state.stack.push(val2.clone());
             vm_state.stack.push(arg.clone());
-            vm_state
-                .stack
-                .push(Rc::new(Function::D1(Expression::Application(
-                    val2.clone(),
-                    arg.clone(),
-                ))));
             vm_state.stack.push(val1.clone());
             vm_state.stack.push(arg.clone());
             vm_state.push_rstack(vm_state.pc + 1, S2_END);

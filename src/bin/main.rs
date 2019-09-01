@@ -83,7 +83,11 @@ fn get_args() -> Option<ArgMatches<'static>> {
         println!("--silent cannot be used with an input file.");
         return None;
     }
-    let verbosity = if matches.is_present("verbose") { Level::Debug as usize } else { 0 };
+    let verbosity = if matches.is_present("verbose") {
+        Level::Debug as usize
+    } else {
+        0
+    };
     stderrlog::new().verbosity(verbosity).init().unwrap();
     Some(matches)
 }

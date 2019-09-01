@@ -1,6 +1,7 @@
 #!/bin/sh
 
 cargo build
+i=1
 cat upstream/tests/unlambda-tests | grep -E "Produces a (\*|blank line)" | while read entry; do
     output=$(echo "$entry" | target/debug/main -s)
     echo "$entry" | grep -q "blank line"
@@ -8,4 +9,7 @@ cat upstream/tests/unlambda-tests | grep -E "Produces a (\*|blank line)" | while
     if ([ $found == 0 ] && [ "$output" != "" ]) || ([ $found == 1 ] && [ "$output" != "*" ]); then
         echo "$entry" / "$output"
     fi
+    printf "\r%d" $i
+    i=$((i+1))
 done
+echo
