@@ -12,33 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::env::args;
 use std::fs::read_to_string;
 use std::io::{stdin, stdout, Write};
 
+use clap::{App, ArgMatches, Arg};
+
 use rul::parse_compile_run;
 
-fn main() {
-    let args: Vec<_> = args().collect();
-    match args.len() {
-        1 => repl(),
-        2 => run_file(&args[1]),
-        _ => println!("usage: {} [filename]", &args[0]),
+fn main() -> Result<(), ()> {
+    let args = get_args()?;
+    match args.value_of("input_file") {
+        Some(f) => run_file(f),
+        None => repl(args.is_present("silent")),
     }
+    Ok(())
 }
 
-fn repl() {
+fn repl(silent: bool) {
     let mut input = String::new();
     loop {
-        print!(">> ");
-        stdout().flush().unwrap();
+        if !silent {
+            print!(">> ");
+            stdout().flush().unwrap();
+        }
         input.clear();
-        stdin().read_line(&mut input).unwrap();
+        let read = stdin().read_line(&mut input).unwrap();
+        if read == 0 {
+            return;
+        }
         if &input.trim().to_lowercase() == "exit" {
             break;
         }
         match parse_compile_run(&input) {
-            Ok(v) => println!("=> {:?}", v),
+            Ok(v) => if !silent {println!("=> {:?}", v)},
             Err(e) => println!("!! {}", e),
         }
     }
@@ -50,4 +56,20 @@ fn run_file(fname: &str) {
         Ok(_) => (),
         Err(e) => println!("Error: {}", e),
     }
+}
+
+fn get_args() -> Result<ArgMatches<'static>, ()> {
+    let matches = App::new("relambda")
+        .arg(Arg::with_name("input_file")
+            .help("File to execute. If not set, will start a REPL."))
+        .arg(Arg::with_name("silent")
+            .short("s")
+            .long("silent")
+            .help("If in REPL mode, controls whether to show prompts and return values."))
+        .get_matches();
+    if matches.is_present("input_file") && matches.is_present("silent") {
+        println!("--silent cannot be used with an input file.");
+        return Err(());
+    }
+    Ok(matches)
 }

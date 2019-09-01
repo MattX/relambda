@@ -192,11 +192,11 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
             OpCode::Invoke | OpCode::CheckSuspend(_) => (),
             _ => vm_state.pc += 1,
         }
-        //println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
+        println!("{:?} ({:?} → {:?})", &vm_state, opcode, code[vm_state.pc]);
 
         let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
         if vm_state.pc == from {
-            //println!("Jumping down {} → {}", vm_state.pc, to);
+            println!("Jumping down {} → {}", vm_state.pc, to);
             vm_state.pc = to;
             vm_state.rstack.pop();
         }
@@ -264,7 +264,7 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             }));
         }
         Function::Reprint => {
-            let fun = vm_state.cur_char.map_or(Function::V, |c| Function::Dot(c));
+            let fun = vm_state.cur_char.map_or(Function::V, Function::Dot);
             vm_state.stack.push(arg);
             vm_state.stack.push(Rc::new(fun));
         }
@@ -285,7 +285,10 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         Function::S2(_, _) | Function::D1(Expression::Promise(_)) => (),
         // The following do not advance the pc in order to call OpCode::Invoke again
         // Function::D1(Expression::Function(_)) falls in this case, but we've covered it above.
-        Function::C | Function::Read | Function::Reprint | Function::D1(Expression::Function(_)) => {
+        Function::C
+        | Function::Read
+        | Function::Reprint
+        | Function::D1(Expression::Function(_)) => {
             debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);
         }
         _ => vm_state.pc += 1,
@@ -315,10 +318,12 @@ fn compile_toplevel(st: &SyntaxTree) -> Result<(Vec<OpCode>, usize), String> {
     let entry_point = code.len();
     compile(st, &mut code)?;
     code.push(OpCode::Finish);
+
     println!(
         "Compiled: {:?}",
         code.iter().enumerate().collect::<Vec<_>>()
     );
+
     Ok((code, entry_point))
 }
 

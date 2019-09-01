@@ -1,0 +1,11 @@
+#!/bin/sh
+
+cargo build
+cat upstream/tests/unlambda-tests | grep -E "Produces a (\*|blank line)" | while read entry; do
+    output=$(echo "$entry" | target/debug/main -s)
+    echo "$entry" | grep -q "blank line"
+    found=$?
+    if ([ $found == 0 ] && [ "$output" != "" ]) || ([ $found == 1 ] && [ "$output" != "*" ]); then
+        echo "$entry" / "$output"
+    fi
+done
