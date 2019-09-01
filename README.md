@@ -27,8 +27,9 @@ dispatched by the `Invoke` opcode.
 
 ## Testing
 
-Some integ tests are included. I've tested all programs in the [CUAN]((ftp://ftp.madore.org/pub/madore/unlambda/CUAN/)).
-The `test-runner` script will run [this suite of tests](ftp://ftp.madore.org/pub/madore/unlambda/tests/unlambda-tests)
+Some integ tests are included. I think I've tested all programs in the
+CUAN (`ftp://ftp.madore.org/pub/madore/unlambda/CUAN/`). The `test-runner` script will run
+[the suite of tests at `ftp://ftp.madore.org/pub/madore/unlambda/tests/unlambda-tests`](https://bit.ly/32lcbMA)
 (which you need to download if you want to run them—I am not including them here as this file has no copyright
 information.) 
 
