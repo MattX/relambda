@@ -18,7 +18,7 @@ use std::io::{stdin, stdout, Write};
 use clap::{crate_version, App, Arg, ArgMatches};
 use log::Level;
 
-use rul::parse_compile_run;
+use relambda::parse_compile_run;
 
 fn main() -> Result<(), ()> {
     let args = get_args().ok_or(())?;
@@ -83,10 +83,7 @@ fn get_args() -> Option<ArgMatches<'static>> {
         println!("--silent cannot be used with an input file.");
         return None;
     }
-    let verbosity = match matches.occurrences_of("verbosity") {
-        0 => 0,
-        _ => Level::Info as usize,
-    };
+    let verbosity = if matches.is_present("verbose") { Level::Debug as usize } else { 0 };
     stderrlog::new().verbosity(verbosity).init().unwrap();
     Some(matches)
 }

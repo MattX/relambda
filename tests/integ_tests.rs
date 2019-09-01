@@ -17,7 +17,7 @@ use std::rc::Rc;
 use lazy_static::{initialize, lazy_static};
 use log::Level;
 
-use rul::{parse_compile_run, Expression, Function};
+use relambda::{parse_compile_run, Expression, Function};
 
 lazy_static! {
     static ref LOGGER: () = {
