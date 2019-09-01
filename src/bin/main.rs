@@ -74,10 +74,9 @@ fn get_args() -> Option<ArgMatches<'static>> {
                 .help("If in REPL mode, controls whether to show prompts and return values."),
         )
         .arg(
-            Arg::with_name("verbosity")
+            Arg::with_name("verbose")
                 .short("v")
-                .multiple(true)
-                .help("Increase message verbosity"),
+                .help("Print debugging information."),
         )
         .get_matches();
     if matches.is_present("input_file") && matches.is_present("silent") {
@@ -86,8 +85,7 @@ fn get_args() -> Option<ArgMatches<'static>> {
     }
     let verbosity = match matches.occurrences_of("verbosity") {
         0 => 0,
-        1 => Level::Info as usize,
-        _ => Level::Trace as usize,
+        _ => Level::Info as usize,
     };
     stderrlog::new().verbosity(verbosity).init().unwrap();
     Some(matches)

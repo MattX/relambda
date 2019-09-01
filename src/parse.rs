@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! parse.rs - Parsing utilities
+//! This file just reads an Unlambda program into a syntax tree, printing errors and their
+//! positions if there are any.
+
 use std::iter::Peekable;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

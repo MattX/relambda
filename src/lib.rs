@@ -24,23 +24,48 @@ use crate::parse::{parse_toplevel, Application, CharPosIterator, Combinator, Syn
 
 mod parse;
 
+/// All values in Unlambda are formally unary functions.
+///
+/// In reality, some of these functions are semantically binary or ternary, but they're curried to
+/// maintain unarity. Other functions are actually continuations or promises, but in any case,
+/// they accept a single operation, unary application.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Function {
+    /// Identity function. Returns the argument when applied.
     I,
+    /// Kestrel or constant combinator. Returns a K1 that holds the argument when applied.
     K,
+    /// Constant function. This holds the value that was passed to a K, and, when applied,
+    /// discards the application argument and returns the stored value.
     K1(Rc<Function>),
+    /// Starling. This is a three-argument function; _'''Sxyz_ evaluates to _''xz'yz_. Note that
+    /// while this is straightforward in regular KSI calculus, if _'xz_ evaluates to `D`, the
+    /// semantics of the outer application change, so extra care must be taken.
     S,
+    /// First partial application of S.
     S1(Rc<Function>),
+    /// Second partial application of S. When applied, performs the transformation described above.
     S2(Rc<Function>, Rc<Function>),
+    /// Void. When applied, discards its argument and returns itself.
     V,
+    /// Promise constructor. This is a special form rather than a function; when applied, its
+    /// argument is not evaluated and is instead packaged into a promise. This mechanism is useful
+    /// for delaying side-effects.
     D,
+    /// Promise. When applied, `Expression` is evaluated and the result is substituted before the
+    /// application proceeds.
     D1(Expression),
+    /// call-with-current-continuation. This has the same semantics as in Scheme.
     C,
+    /// A continuation.
     C1(Box<VmState>),
+    /// Special continuation representing the whole program. When invoked, exits with the argument
+    /// as a value.
     E,
     Read,
     Reprint,
     Compare(char),
+    /// When invoked, acts like `I` but prints the attached char.
     Dot(char),
 }
 
@@ -157,7 +182,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
     loop {
         let opcode = code[vm_state.pc];
         match opcode {
-            OpCode::Placeholder => panic!("placeholder not replaced during compilation."),
+            OpCode::Placeholder => panic!("placeholder not replaced during compilation"),
             OpCode::PushImmediate(c) => vm_state.stack.push(Rc::new(Function::from_combinator(c))),
             OpCode::Rot => {
                 let (fst, snd, thr) = (
@@ -205,8 +230,8 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
                 }
             }
             OpCode::Finish => {
+                // The rstack should contain only our sentinel return point
                 debug_assert_eq!(vm_state.stack.len(), 1);
-                // The rstack should contain our sentinel return point
                 debug_assert_eq!(vm_state.rstack, [(code.len(), code.len())]);
                 return Ok(vm_state.stack.pop().unwrap());
             }
@@ -219,7 +244,7 @@ fn run_vm(code: &[OpCode], entry_point: usize) -> Result<Rc<Function>, String> {
 
         let (to, from) = vm_state.rstack[vm_state.rstack.len() - 1];
         if vm_state.pc == from {
-            debug!("Jumping down {} → {}", vm_state.pc, to);
+            debug!("Returning {} → {}", vm_state.pc, to);
             vm_state.pc = to;
             vm_state.rstack.pop();
         }
@@ -241,8 +266,8 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             vm_state
                 .stack
                 .push(Rc::new(Function::D1(Expression::Application(
-                    val1.clone(),
                     val2.clone(),
+                    arg.clone(),
                 ))));
             vm_state.stack.push(val1.clone());
             vm_state.stack.push(arg.clone());
@@ -317,9 +342,12 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
             vm_state.stack.push(arg);
         }
     }
+
     match fun.borrow() {
         // The following do not advance the pc because they've just set it
-        Function::S2(_, _) | Function::D1(Expression::Promise(_)) => (),
+        Function::S2(_, _)
+        | Function::D1(Expression::Promise(_))
+        | Function::D1(Expression::Application(_, _)) => (),
         // The following do not advance the pc in order to call OpCode::Invoke again
         // Function::D1(Expression::Function(_)) falls in this case, but we've covered it above.
         Function::C
@@ -330,6 +358,7 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
         }
         _ => vm_state.pc += 1,
     }
+
     Ok(None)
 }
 

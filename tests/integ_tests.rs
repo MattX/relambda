@@ -91,3 +91,23 @@ fn test_invoke_d() {
         )))))
     );
 }
+
+#[test]
+fn test_s_d() {
+    setup_logging();
+    assert_eq!(parse_compile_run(&"````sdi`kii").unwrap(), Function::I);
+}
+
+// Examples I found bugs with at some point
+#[test]
+fn tests_random_stuff() {
+    setup_logging();
+    assert_eq!(
+        parse_compile_run(&"`r```s``si`k.*`kid").unwrap(),
+        Function::I
+    );
+    assert_eq!(
+        parse_compile_run(&"`r```s``s`kd`k.*`kii").unwrap(),
+        Function::I
+    );
+}
