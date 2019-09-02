@@ -358,13 +358,14 @@ fn invoke(code: &[OpCode], vm_state: &mut VmState) -> Result<Option<Rc<Function>
     }
 
     match fun.borrow() {
-        // The following do not advance the pc because they've just set it
+        // The following do not advance the program counter because they've just set it
         Function::S2(_, _)
         | Function::D1(Expression::Promise(_))
         | Function::D1(Expression::Application(_, _)) => (),
-        // The following do not advance the pc in order to call OpCode::Invoke again
+        // The following do not advance the program counter in order to call OpCode::Invoke again
         Function::C
         | Function::Read
+        | Function::Compare(_)
         | Function::Reprint
         | Function::D1(Expression::Function(_)) => {
             debug_assert_eq!(code[vm_state.pc], OpCode::Invoke);

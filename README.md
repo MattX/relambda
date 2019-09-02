@@ -14,6 +14,16 @@ You can find more sample programs at the
 [comprehensive Unlambda archive network](ftp://ftp.madore.org/pub/madore/unlambda/CUAN/),
 and a tutorial and language spec on the [Unlambda homepage](http://www.madore.org/~david/programs/unlambda/).
 
+### Try it out!
+
+Make sure you [have cargo installed](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+
+```
+git clone https://github.com/MattX/relambda.git
+cd relambda
+cargo run
+```
+
 ## Language support
 
 Relambda supports Unlambda 2.0. It supports arbitrary Unicode characters after `.`, where the standard supports
@@ -36,5 +46,5 @@ information.)
 ### Performance
 
 Very informal testing suggests that this interpreter is quite a bit faster than the C-refcount interpreter included in
-the official CPAN distribution. It's 2/3 as much code, but Rust is a higher-level language than C, and uses dependencies
+the official CUAN distribution. It's 2/3 as much code, but Rust is a higher-level language than C, and uses dependencies
 to manage argument parsing and output level control.

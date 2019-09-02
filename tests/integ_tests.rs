@@ -110,4 +110,8 @@ fn tests_random_stuff() {
         parse_compile_run(&"`r```s``s`kd`k.*`kii").unwrap(),
         Function::I
     );
+    assert_eq!(
+        parse_compile_run(&"`r```sd``s`k.*`kid").unwrap(),
+        Function::D1(Expression::Function(Rc::new(Function::I)))
+    )
 }
